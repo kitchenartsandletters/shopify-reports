@@ -1,0 +1,44 @@
+name: Shopify Reports
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"    # Daily inventory check at 6am
+    - cron: "0 15 * * 1"   # Weekly sales report Monday 3pm
+
+jobs:
+  inventory_check:
+    if: github.event.schedule != '0 15 * * 1'  # Don't run on weekly schedule
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run inventory check
+        env:
+          SHOP_URL: ${{ secrets.SHOP_URL }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+        run: python -m reports.inventory
+
+  sales_report:
+    if: github.event.schedule != '0 6 * * *'  # Don't run on daily schedule
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run sales report
+        env:
+          SHOP_URL: ${{ secrets.SHOP_URL }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+        run: python -m reports.weekly_sales
