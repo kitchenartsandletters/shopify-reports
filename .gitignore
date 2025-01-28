@@ -1,0 +1,40 @@
+# Environment and configuration files
+.env
+.env.yaml
+*.env
+.venv/
+venv/
+env/
+ENV/
+
+# Python-related files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets and sensitive information
+*.key
+*.pem
+*.cert
+secrets.json
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Project-specific logs and outputs
+*.log
+logs/
+output/
+reports/
