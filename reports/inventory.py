@@ -42,13 +42,16 @@ def fetch_active_products():
                             }
                         }
                     }
-                }
-            }
-            pageInfo {
-                hasNextPage
-            }
-        }
-    }
+                    variants(first: 20) {
+                        edges {
+                            node {
+                                id
+                                sku
+                                price
+                                inventoryQuantity
+                            }
+                        }
+                    }
     """
     return shopify_utils.paginated_query(query)
 
