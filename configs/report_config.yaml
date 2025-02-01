@@ -1,0 +1,16 @@
+email_settings:
+  enabled: true
+  recipients:
+  - gil@kitchenartsandletters.com
+output_settings:
+  filename_template: shopify_sales_{date}.{format}
+  output_directory: output
+report_settings:
+  days_lookback: 2
+  report_format:
+  - csv
+  - xlsx
+  time_zone: US/Eastern
+shopify_settings:
+  api_version: 2024-01
+  shop_url: castironbooks.myshopify.com

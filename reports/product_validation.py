@@ -8,7 +8,9 @@ from typing import Dict, List
 from shared.shopify_utils import ShopifyAPI
 from shared.validation import ProductValidator, ValidationConfig, ValidationIssue
 from shared.email_utils import EmailClient
+from shared import csv_generator
 from configs import report_configs
+from configs.exclusions import load_exclusions
 
 # Set up logging
 logging.basicConfig(
@@ -17,8 +19,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
-def fetch_all_products(limit=20000):
-    """Fetches products using GraphQL pagination up to specified limit"""
+def fetch_all_products():
+    """Fetches all products using GraphQL pagination"""
     api = ShopifyAPI()
     query = """
     query($first: Int!, $after: String) {
@@ -31,18 +33,15 @@ def fetch_all_products(limit=20000):
                 node {
                     id
                     title
+                    handle
                     status
                     descriptionHtml
-                    productCategory {
-                        productTaxonomyNode {
-                            name
-                        }
-                    }
                     images(first: 10) {
                         edges {
                             node {
                                 id
                                 altText
+                                originalSrc
                             }
                         }
                     }
@@ -76,6 +75,7 @@ def fetch_all_products(limit=20000):
                                 sku
                                 barcode
                                 price
+                                inventoryQuantity
                                 inventoryItem {
                                     id
                                     inventoryLevels(first: 1) {
@@ -93,6 +93,7 @@ def fetch_all_products(limit=20000):
                                         }
                                     }
                                 }
+                                taxable
                             }
                         }
                     }
@@ -107,11 +108,12 @@ def fetch_all_products(limit=20000):
     """
     
     all_products = []
-    page_size = min(250, limit)  # Maximum allowed by Shopify
+    page_size = 250
     has_next_page = True
     cursor = None
+    total_fetched = 0
     
-    while has_next_page and len(all_products) < limit:
+    while has_next_page:
         variables = {
             "first": page_size,
             "after": cursor
@@ -123,25 +125,29 @@ def fetch_all_products(limit=20000):
             
             # Extract products from edges
             products = [edge['node'] for edge in products_data['edges']]
-            remaining = limit - len(all_products)
-            products = products[:remaining]  # Only take what we need
             all_products.extend(products)
+            total_fetched = len(all_products)
             
             # Update pagination info
-            if len(all_products) >= limit:
-                break
-                
             page_info = products_data['pageInfo']
             has_next_page = page_info['hasNextPage']
             cursor = page_info['endCursor']
             
-            logging.info(f"Fetched {len(products)} products. Total so far: {len(all_products)}")
+            # Log progress every 1000 products
+            if total_fetched % 1000 == 0:
+                logging.info(f"Fetched {total_fetched} products...")
             
         except Exception as e:
             logging.error(f"Error fetching products: {e}")
             raise
             
+    # Log final count only once
+    logging.info(f"Total products fetched: {total_fetched}")
     return all_products
+
+def log_exclusions(product: Dict, reason: str):
+    """Log excluded products"""
+    logging.info(f"Excluded product: {product.get('title')} - Reason: {reason}")
 
 def generate_validation_report() -> Dict:
     """
@@ -151,41 +157,51 @@ def generate_validation_report() -> Dict:
     logging.info("Starting product validation report generation")
     
     try:
-        # Initialize validator
+        # Initialize validator and exclusions
         config = ValidationConfig(
             min_images=1,
             min_description_length=100,
             min_price=0.01
         )
         validator = ProductValidator(config)
+        exclusions = load_exclusions()
         
         # Fetch and validate products
-        products = fetch_all_products(limit=20000)
+        products = fetch_all_products()
         total_products = len(products)
         logging.info(f"Fetched {total_products} total products")
         
-        # Track validation results
+        # Track validation results and exclusions
         issues_found = {}
         published_count = 0
+        excluded_count = 0
         
         # Validate each product
         for product in products:
-            if product.get('status') == 'ACTIVE':
-                published_count += 1
-                issues = validator.validate_product(product)
-                if issues:
-                    issues_found[product['id']] = {
-                        'title': product['title'],
-                        'issues': issues
-                    }
+            # Check exclusions first
+            should_exclude, reason = exclusions.should_exclude(product)
+            if should_exclude:
+                excluded_count += 1
+                log_exclusions(product, reason)
+                continue
+                
+            published_count += 1
+            issues = validator.validate_product(product)
+            if issues:
+                issues_found[product['id']] = {
+                    'product': product,
+                    'issues': issues
+                }
         
         logging.info(f"Validated {published_count} published products")
+        logging.info(f"Excluded {excluded_count} products")
         logging.info(f"Found issues in {len(issues_found)} products")
         
         return {
             'issues': issues_found,
             'total_products': published_count,
-            'issues_count': len(issues_found)
+            'issues_count': len(issues_found),
+            'excluded_count': excluded_count
         }
         
     except Exception as e:
@@ -203,23 +219,24 @@ def generate_csv_report(issues_found: Dict) -> str:
     filepath = os.path.join(output_dir, filename)
     
     # Prepare CSV data
-    fieldnames = ['Product Title', 'Product ID', 'Issue Type', 'Issue Description', 'Details']
+    fieldnames = ['Product ID', 'Product Title', 'Issue Type', 'Issue Description', 'Details']
     rows = []
     
     for product_id, data in issues_found.items():
-        title = data['title']
+        product = data['product']
+        title = product['title']
         for issue in data['issues']:
             rows.append({
-                'Product Title': title,
                 'Product ID': product_id,
+                'Product Title': title,
                 'Issue Type': issue.severity,
                 'Issue Description': issue.message,
                 'Details': str(issue.details) if issue.details else ''
             })
     
     # Write to CSV
-    with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     
@@ -241,27 +258,33 @@ def main():
         validation_results = generate_validation_report()
         
         if validation_results['issues']:
-            # Generate CSV
+            # Generate CSV report
             csv_path = generate_csv_report(validation_results['issues'])
-            filename = os.path.basename(csv_path)
+            csv_filename = os.path.basename(csv_path)
+            
+            # Generate import CSV
+            import_path = csv_generator.generate_import_csv(validation_results['issues'])
+            import_filename = os.path.basename(import_path)
             
             # Format email content
             email_content = format_email_content(
                 total_products=validation_results['total_products'],
                 issues_count=validation_results['issues_count'],
-                filename=filename
+                filename=f"{csv_filename}, {import_filename}"
             )
             
-            # Send email with attachment
+            # Send email with both attachments
             email_client = EmailClient()
             email_client.send_report(
                 subject=f"Daily Product Validation Report - {datetime.now().strftime('%Y-%m-%d')}",
                 content=email_content,
                 recipient_list=report_configs.INVENTORY_REPORT_RECIPIENTS,
-                attachments={filename: csv_path}
+                attachments={
+                    csv_filename: csv_path,
+                    import_filename: import_path
+                }
             )
             
-            # Exit with status code 1 if issues found
             sys.exit(1)
         else:
             logging.info("No validation issues found")

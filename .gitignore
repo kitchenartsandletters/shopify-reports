@@ -40,3 +40,55 @@ output/
 reports/
 .env
 .env
+
+# Python Specifics
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+.env
+.venv
+
+# IDE Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sensitive Files
+*.key
+*.pem
+credentials.json
+
+# Logs and Outputs
+logs/
+output/
+*.log
+
+# Report Outputs
+*.csv
+*.xlsx
+
+# OS Generated Files
+.DS_Store
+Thumbs.db

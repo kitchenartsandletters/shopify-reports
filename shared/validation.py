@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict, List, Set
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +24,7 @@ class ProductValidator:
         self.config = config
         
     def validate_images(self, product: Dict) -> List[ValidationIssue]:
+        """Validate product has required number of images"""
         issues = []
         images = product.get('images', {}).get('edges', [])
         
@@ -40,6 +42,7 @@ class ProductValidator:
         return issues
         
     def validate_description(self, product: Dict) -> List[ValidationIssue]:
+        """Validate product description length"""
         issues = []
         description = product.get('descriptionHtml', '')
         
@@ -57,6 +60,7 @@ class ProductValidator:
         return issues
         
     def validate_pricing(self, product: Dict) -> List[ValidationIssue]:
+        """Validate product pricing"""
         issues = []
         price_range = product.get('priceRangeV2', {})
         min_price = price_range.get('minVariantPrice', {}).get('amount')
@@ -75,6 +79,7 @@ class ProductValidator:
         return issues
         
     def validate_collections(self, product: Dict) -> List[ValidationIssue]:
+        """Validate product collection assignments"""
         issues = []
         collections = product.get('collections', {}).get('edges', [])
         
@@ -87,7 +92,7 @@ class ProductValidator:
         return issues
         
     def validate_tags(self, product: Dict) -> List[ValidationIssue]:
-        """Validate product has more than one tag"""
+        """Validate product tags"""
         issues = []
         tags = product.get('tags', [])
         
@@ -102,10 +107,17 @@ class ProductValidator:
                 message='Product has only one tag',
                 details={'current_tag': tags[0]}
             ))
+        elif len(tags) == 2:
+            issues.append(ValidationIssue(
+                severity='warning',
+                message='Product has only two tags',
+                details={'current_tags': tags}
+            ))
                 
         return issues
         
     def validate_metafields(self, product: Dict) -> List[ValidationIssue]:
+        """Validate required metafields"""
         issues = []
         required_fields = {
             'custom.author': 'Author missing',
@@ -130,6 +142,7 @@ class ProductValidator:
         return issues
         
     def validate_barcode(self, product: Dict) -> List[ValidationIssue]:
+        """Validate variant barcodes"""
         issues = []
         variants = product.get('variants', {}).get('edges', [])
         
@@ -152,6 +165,7 @@ class ProductValidator:
         return issues
         
     def validate_sku(self, product: Dict) -> List[ValidationIssue]:
+        """Validate variant SKUs"""
         issues = []
         variants = product.get('variants', {}).get('edges', [])
         
@@ -173,29 +187,14 @@ class ProductValidator:
                 
         return issues
         
-    def validate_publication(self, product: Dict) -> bool:
-        """
-        Checks if product is published to online store.
-        Returns True if published, False if not.
-        """
-        return product.get('status') == 'ACTIVE'
-        
     def validate_variant_settings(self, product: Dict) -> List[ValidationIssue]:
-        """Validate various variant settings"""
+        """Validate variant settings (fulfillment, inventory, taxable)"""
         issues = []
         variants = product.get('variants', {}).get('edges', [])
         
         for variant in variants:
             node = variant['node']
             variant_id = node.get('id')
-            
-            # Check SKU
-            if not node.get('sku'):
-                issues.append(ValidationIssue(
-                    severity='error',
-                    message='Variant missing SKU',
-                    details={'variant_id': variant_id}
-                ))
             
             # Check inventory and fulfillment settings
             inventory_item = node.get('inventoryItem', {})
@@ -204,7 +203,7 @@ class ProductValidator:
             if inventory_levels:
                 location = inventory_levels[0]['node']['location']
                 
-                # Check if it's manual fulfillment (not a fulfillment service and handles online orders)
+                # Check if it's manual fulfillment
                 if location.get('isFulfillmentService'):
                     issues.append(ValidationIssue(
                         severity='error',
@@ -245,38 +244,151 @@ class ProductValidator:
                 
         return issues
 
-def format_validation_report(products_with_issues: Dict[str, List[ValidationIssue]]) -> str:
-    """Format validation results into readable report"""
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    if not products_with_issues:
-        return f"Product Data Validation Report\nGenerated: {now}\n\nAll products passed validation checks."
+    def validate_image_alt_text(self, product: Dict) -> List[ValidationIssue]:
+        """Validate image alt text"""
+        issues = []
+        images = product.get('images', {}).get('edges', [])
         
-    error_count = sum(1 for issues in products_with_issues.values() 
-                     for issue in issues if issue.severity == 'error')
-    warning_count = sum(1 for issues in products_with_issues.values() 
-                       for issue in issues if issue.severity == 'warning')
-    
-    lines = [
-        f"Product Data Validation Report",
-        f"Generated: {now}",
-        f"\nSummary:",
-        f"• Products with issues: {len(products_with_issues)}",
-        f"• Critical errors: {error_count}",
-        f"• Warnings: {warning_count}\n",
-        "\nDetailed Issues:"
-    ]
-    
-    for product_id, issues in products_with_issues.items():
-        errors = [i for i in issues if i.severity == 'error']
-        warnings = [i for i in issues if i.severity == 'warning']
+        for idx, image in enumerate(images, 1):
+            node = image['node']
+            alt_text = node.get('altText', '')
+            
+            if not alt_text:
+                if idx == 1:
+                    expected = f"Book Cover: {product['title']}"
+                    issues.append(ValidationIssue(
+                        severity='error',
+                        message=f'First image missing alt text',
+                        details={
+                            'image_id': node.get('id'),
+                            'expected': expected
+                        }
+                    ))
+                else:
+                    issues.append(ValidationIssue(
+                        severity='error',
+                        message=f'Image {idx} missing alt text',
+                        details={
+                            'image_id': node.get('id'),
+                            'expected': 'presentation image'
+                        }
+                    ))
+            elif idx == 1 and alt_text != f"Book Cover: {product['title']}":
+                issues.append(ValidationIssue(
+                    severity='error',
+                    message='First image has incorrect alt text',
+                    details={
+                        'image_id': node.get('id'),
+                        'current': alt_text,
+                        'expected': f"Book Cover: {product['title']}"
+                    }
+                ))
+            elif idx > 1 and alt_text.lower() != "presentation image":
+                issues.append(ValidationIssue(
+                    severity='error',
+                    message=f'Image {idx} has incorrect alt text',
+                    details={
+                        'image_id': node.get('id'),
+                        'current': alt_text,
+                        'expected': 'presentation image'
+                    }
+                ))
+                
+        return issues
         
-        lines.extend([
-            f"\n{product_id}:",
-            "Critical Issues:" if errors else None,
-            *[f"❌ {issue.message}" for issue in errors],
-            "Warnings:" if warnings else None,
-            *[f"⚠️ {issue.message}" for issue in warnings]
-        ])
+    def validate_publication(self, product: Dict) -> bool:
+        """
+        Checks if product is published to online store.
+        Returns True if published, False if not.
+        """
+        return product.get('status') == 'ACTIVE'
         
-    return "\n".join(line for line in lines if line is not None)
+    def validate_product(self, product: Dict) -> List[ValidationIssue]:
+        """Run all validation checks on a product"""
+        # First check if product is published
+        if not self.validate_publication(product):
+            return []  # Skip validation for unpublished products
+            
+        issues = []
+        validation_methods = [
+            self.validate_images,
+            self.validate_description,
+            self.validate_pricing,
+            self.validate_collections,
+            self.validate_tags,
+            self.validate_metafields,
+            self.validate_barcode,
+            self.validate_sku,
+            self.validate_variant_settings,
+            self.validate_image_alt_text
+        ]
+        
+        for validate in validation_methods:
+            issues.extend(validate(product))
+            
+        return issues
+
+@dataclass        
+class TagValidator:
+    """Helper class for tag validation and transformation"""
+    
+    BINDING_TAGS = {
+        'P': 'Paperback',
+        'C': 'Hardcover',
+        'F': 'Flexibound',
+        'S': 'Spiralbound'
+    }
+    
+    LANGUAGE_TAGS = {
+        'Ln_Ar': 'Arabic',
+        'Ln_Aa': 'Catalan',
+        'Ln_Ch': 'Chinese',
+        'Ln_Da': 'Danish',
+        'Ln_Du': 'Dutch',
+        'Ln_En': 'English',
+        'Ln_Fa': 'Faroese',
+        'Ln_Fr': 'French',
+        'Ln_Ge': 'German',
+        'Ln_Kr': 'Korean',
+        'Ln_It': 'Italian',
+        'Ln_Ja': 'Japanese',
+        'Ln_Po': 'Portuguese',
+        'Ln_Sp': 'Spanish',
+        'Ln_Sw': 'Swedish',
+        'Ln_Ta': 'Tagalog',
+        'Ln_Th': 'Thai'
+    }
+    
+    @staticmethod
+    def parse_date_tag(tag: str) -> tuple:
+        """Parse date tag and return standardized format if valid"""
+        # Various date patterns
+        patterns = [
+            r'^(\d{1,2})-(\d{1,2})-(\d{4})$',  # M-D-YYYY or MM-DD-YYYY
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, tag)
+            if match:
+                month, day, year = match.groups()
+                try:
+                    # Validate date
+                    date_obj = datetime(int(year), int(month), int(day))
+                    # Return both formatted strings
+                    return (
+                        f"{int(month):02d}-{int(day):02d}-{year}",  # MM-DD-YYYY
+                        f"{year}-{int(month):02d}-{int(day):02d}"    # YYYY-MM-DD
+                    )
+                except ValueError:
+                    pass
+        return None, None
+    
+    @staticmethod
+    def is_binding_tag(tag: str) -> str:
+        """Check if tag is a binding code and return full name"""
+        return TagValidator.BINDING_TAGS.get(tag)
+    
+    @staticmethod
+    def get_language_name(tag: str) -> str:
+        """Get full language name from language tag"""
+        return TagValidator.LANGUAGE_TAGS.get(tag)

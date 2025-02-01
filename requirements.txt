@@ -1,2 +1,3 @@
 sendgrid
 requests
+python-dotenv
