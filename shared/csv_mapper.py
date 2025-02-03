@@ -126,71 +126,75 @@ class ValidationMapper:
         return image_rows
 
     def map_product_data(self, product: Dict) -> Dict[str, CSVField]:
-        """Maps core product data to CSV fields, including custom metafields"""
-        validator = TagValidator()
-        variant = product.get('variants', {}).get('edges', [])[0].get('node', {}) if product.get('variants', {}).get('edges') else {}
+    """Maps core product data to CSV fields, including custom metafields"""
+    validator = TagValidator()
+    variant = product.get('variants', {}).get('edges', [])[0].get('node', {}) if product.get('variants', {}).get('edges') else {}
+    
+    # Process tags for special formats
+    tags = list(product.get('tags', []))  # Convert to list for modification
+    transformed_tags = []
+    metafields = {}
+    languages = []  # List to collect multiple languages
+    
+    # Clean up SKU and Barcode values
+    sku = variant.get('sku', '').strip() if variant.get('sku') else ''
+    barcode = variant.get('barcode', '').strip() if variant.get('barcode') else ''
+    
+    # Validate and clean ISBN if necessary
+    if barcode.startswith(('978', '979')) and len(barcode) != 13:
+        barcode = ''  # Clear invalid ISBN
+    
+    # Process each tag
+    for tag in tags:
+        # Check for date tag
+        date_tag, pub_date = validator.parse_date_tag(tag)
+        if date_tag:
+            transformed_tags.append(date_tag)  # Add standardized date tag
+            metafields['Publication Date (product.metafields.custom.pub_date)'] = pub_date
+            continue
         
-        # Process tags for special formats
-        tags = list(product.get('tags', []))  # Convert to list for modification
-        transformed_tags = []
-        metafields = {}
-        languages = []  # List to collect multiple languages
-        
-        # Clean up SKU and Barcode values
-        sku = variant.get('sku', '').strip() if variant.get('sku') else ''
-        barcode = variant.get('barcode', '').strip() if variant.get('barcode') else ''
-        
-        # Process each tag
-        for tag in tags:
-            # Check for date tag
-            date_tag, pub_date = validator.parse_date_tag(tag)
-            if date_tag:
-                transformed_tags.append(date_tag)  # Add standardized date tag
-                metafields['Publication Date (product.metafields.custom.pub_date)'] = pub_date
-                continue
-            
-            # Check for binding tag
-            binding = validator.is_binding_tag(tag)
-            if binding:
-                metafields['Binding (product.metafields.custom.binding)'] = binding
-                transformed_tags.append(tag)
-                continue
-            
-            # Check for language tag
-            language = validator.get_language_name(tag)
-            if language:
-                languages.append(language)  # Add to languages list
-                transformed_tags.append(tag)
-                continue
-                
+        # Check for binding tag
+        binding = validator.is_binding_tag(tag)
+        if binding:
+            metafields['Binding (product.metafields.custom.binding)'] = binding
             transformed_tags.append(tag)
+            continue
         
-        # Add languages as array if any found
-        if languages:
-            language_list = [f'"{lang}"' for lang in languages]
-            metafields['Language (product.metafields.custom.language)'] = f"[{', '.join(language_list)}]"
-        
-        # If SKU exists, use it for author field (using cleaned SKU)
-        if sku:
-            metafields['Author (product.metafields.custom.author)'] = sku
-        
-        # Combine product data with metafields
-        csv_fields = {
-            'Handle': CSVField('Handle', product.get('handle', '')),
-            'Title': CSVField('Title', product.get('title', '')),
-            'Body (HTML)': CSVField('Body (HTML)', product.get('descriptionHtml', '')),
-            'Tags': CSVField('Tags', ', '.join(transformed_tags)),
-            'Variant SKU': CSVField('Variant SKU', sku),
-            'Variant Barcode': CSVField('Variant Barcode', barcode),
-            'Variant Price': CSVField('Variant Price', str(variant.get('price', ''))),
-            'Variant Fulfillment Service': CSVField('Variant Fulfillment Service', 'manual')
-        }
-        
-        # Add metafields to CSV fields
-        for key, value in metafields.items():
-            csv_fields[key] = CSVField(key, str(value))
-        
-        return csv_fields
+        # Check for language tag
+        language = validator.get_language_name(tag)
+        if language:
+            languages.append(language)  # Add to languages list
+            transformed_tags.append(tag)
+            continue
+            
+        transformed_tags.append(tag)
+    
+    # Add languages as array if any found
+    if languages:
+        language_list = [f'"{lang}"' for lang in languages]
+        metafields['Language (product.metafields.custom.language)'] = f"[{', '.join(language_list)}]"
+    
+    # If SKU exists, use it for author field (using cleaned SKU)
+    if sku:
+        metafields['Author (product.metafields.custom.author)'] = sku
+    
+    # Combine product data with metafields
+    csv_fields = {
+        'Handle': CSVField('Handle', product.get('handle', '')),
+        'Title': CSVField('Title', product.get('title', '')),
+        'Body (HTML)': CSVField('Body (HTML)', product.get('descriptionHtml', '')),
+        'Tags': CSVField('Tags', ', '.join(transformed_tags)),
+        'Variant SKU': CSVField('Variant SKU', sku),
+        'Variant Barcode': CSVField('Variant Barcode', barcode),
+        'Variant Price': CSVField('Variant Price', str(variant.get('price', ''))),
+        'Variant Fulfillment Service': CSVField('Variant Fulfillment Service', 'manual')
+    }
+    
+    # Add metafields to CSV fields
+    for key, value in metafields.items():
+        csv_fields[key] = CSVField(key, str(value))
+    
+    return csv_fields
 
     def get_required_columns(self, fields: Dict[str, CSVField]) -> List[str]:
         """Gets list of all required columns based on validation issues"""

@@ -142,7 +142,7 @@ class ProductValidator:
         return issues
         
     def validate_barcode(self, product: Dict) -> List[ValidationIssue]:
-        """Validate variant barcodes"""
+        """Validate variant barcodes and ISBN format"""
         issues = []
         variants = product.get('variants', {}).get('edges', [])
         
@@ -154,13 +154,23 @@ class ProductValidator:
             return issues
             
         for variant in variants:
-            barcode = variant['node'].get('barcode')
+            barcode = variant['node'].get('barcode', '').strip()
             if not barcode:
                 issues.append(ValidationIssue(
                     severity='error',
                     message='Variant missing barcode/ISBN',
                     details={'variant_id': variant['node'].get('id')}
                 ))
+            elif barcode.startswith(('978', '979')):
+                if len(barcode) != 13:
+                    issues.append(ValidationIssue(
+                        severity='error',
+                        message='Incorrect ISBN format',
+                        details={
+                            'variant_id': variant['node'].get('id'),
+                            'barcode': barcode
+                        }
+                    ))
                 
         return issues
         
