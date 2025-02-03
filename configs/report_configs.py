@@ -1,6 +1,9 @@
+import os
+
 # Report recipient configurations
-INVENTORY_REPORT_RECIPIENTS = ["gil@kitchenartsandletters.com"]
-SALES_REPORT_RECIPIENTS = ["gil@kitchenartsandletters.com"]
+INVENTORY_REPORT_RECIPIENTS = [
+    "gil@kitchenartsandletters.com"
+]
 
 # Validation thresholds
 PRODUCT_VALIDATION = {
@@ -16,8 +19,8 @@ PRODUCT_VALIDATION = {
     }
 }
 
-# Report schedules
+# Report schedules (UTC times)
 SCHEDULE_CONFIG = {
-    "inventory": "0 6 * * *",  # Daily at 6am
+    "inventory": "0 14 * * 1",  # Monday at 10am ET (14:00 UTC)
     "sales": "0 15 * * 1"      # Weekly on Monday at 3pm
 }

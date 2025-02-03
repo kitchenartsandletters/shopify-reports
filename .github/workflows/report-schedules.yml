@@ -3,11 +3,10 @@ name: Shopify Reports
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * 1"   # Inventory check on Mondays at 10am EST (14:00 UTC)
+    - cron: "0 14 * * 1"   # Monday at 10am ET (14:00 UTC)
 
 jobs:
   inventory_check:
-    if: github.event.schedule != 'some_other_schedule'  # Placeholder for future flexibility
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -22,4 +21,5 @@ jobs:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_RECIPIENTS: "gil@kitchenartsandletters.com"
         run: python -m reports.product_validation
