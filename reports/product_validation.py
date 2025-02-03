@@ -178,8 +178,19 @@ def generate_validation_report() -> Dict:
         
         # Validate each product
         for product in products:
+            # Defensive check to ensure product is not None
+            if not product:
+                logging.warning("Encountered None product, skipping...")
+                continue
+            
             # Check exclusions first
-            should_exclude, reason = exclusions.should_exclude(product)
+            try:
+                should_exclude, reason = exclusions.should_exclude(product)
+            except Exception as e:
+                logging.error(f"Error checking exclusions for product: {product.get('title', 'Unknown')}")
+                logging.error(f"Exclusion check error: {e}")
+                continue
+                
             if should_exclude:
                 excluded_count += 1
                 log_exclusions(product, reason)

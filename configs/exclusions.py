@@ -54,8 +54,16 @@ class ExclusionList:
         Check if a product should be excluded
         Returns (should_exclude: bool, reason: Optional[str])
         """
+
+        # Defensive check for None or empty product
+        if not product:
+            return False, None  # Or log a warning if needed
+
         # Check exact title match
         title = product.get('title', '')
+        if not title:  # Additional check in case title is None
+            return False, None
+
         if title in self.exact_titles:
             return True, f"Exact title match: {title}"
             
@@ -67,14 +75,20 @@ class ExclusionList:
         # Check barcode/ISBN
         variants = product.get('variants', {}).get('edges', [])
         for variant in variants:
-            barcode = variant.get('node', {}).get('barcode')
+            variant_node = variant.get('node', {})
+            if not variant_node:  # Defensive check for None variant
+                continue
+            
+            barcode = variant_node.get('barcode')
             if barcode and barcode in self.barcodes:
                 return True, f"Barcode match: {barcode}"
         
         # Check URL
-        url = f"https://kitchenartsandletters.com/products/{product.get('handle')}"
-        if url in self.urls:
-            return True, f"URL match: {url}"
+        handle = product.get('handle', '')
+        if handle:
+            url = f"https://kitchenartsandletters.com/products/{handle}"
+            if url in self.urls:
+                return True, f"URL match: {url}"
         
         return False, None
 

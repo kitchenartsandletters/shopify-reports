@@ -154,12 +154,29 @@ class ProductValidator:
             return issues
             
         for variant in variants:
-            barcode = variant['node'].get('barcode', '').strip()
+            # Add defensive checks
+            if not variant or 'node' not in variant:
+                continue
+            
+            variant_node = variant.get('node', {})
+            if not variant_node:
+                continue
+            
+            # Safely get barcode with default empty string
+            barcode = variant_node.get('barcode', '')
+            
+            # Ensure barcode is not None before stripping
+            if barcode is None:
+                barcode = ''
+            
+            # Now safe to strip
+            barcode = str(barcode).strip()
+            
             if not barcode:
                 issues.append(ValidationIssue(
                     severity='error',
                     message='Variant missing barcode/ISBN',
-                    details={'variant_id': variant['node'].get('id')}
+                    details={'variant_id': variant_node.get('id')}
                 ))
             elif barcode.startswith(('978', '979')):
                 if len(barcode) != 13:
@@ -167,7 +184,7 @@ class ProductValidator:
                         severity='error',
                         message='Incorrect ISBN format',
                         details={
-                            'variant_id': variant['node'].get('id'),
+                            'variant_id': variant_node.get('id'),
                             'barcode': barcode
                         }
                     ))
@@ -187,14 +204,31 @@ class ProductValidator:
             return issues
             
         for variant in variants:
-            sku = variant['node'].get('sku')
+            # Add defensive checks
+            if not variant or 'node' not in variant:
+                continue
+            
+            variant_node = variant.get('node', {})
+            if not variant_node:
+                continue
+            
+            # Safely get SKU with default None
+            sku = variant_node.get('sku')
+            
+            # Ensure sku is not None before stripping
+            if sku is None:
+                sku = ''
+            
+            # Now safe to convert to string and strip
+            sku = str(sku).strip()
+            
             if not sku:
                 issues.append(ValidationIssue(
                     severity='error',
                     message='Variant missing SKU',
-                    details={'variant_id': variant['node'].get('id')}
+                    details={'variant_id': variant_node.get('id')}
                 ))
-                
+                    
         return issues
         
     def validate_variant_settings(self, product: Dict) -> List[ValidationIssue]:
@@ -334,8 +368,15 @@ class ProductValidator:
         ]
         
         for validate in validation_methods:
-            issues.extend(validate(product))
-            
+            try:
+                method_issues = validate(product)
+                issues.extend(method_issues)
+            except Exception as e:
+                logging.error(f"Error in validation method {validate.__name__}: {e}")
+                logging.error(f"Product details: {product.get('title', 'Unknown Title')}")
+                # Optionally, you can re-raise the exception if you want to stop processing
+                # raise
+                
         return issues
 
 @dataclass        
