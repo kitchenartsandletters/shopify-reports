@@ -2,7 +2,8 @@ import os
 
 # Report recipient configurations
 INVENTORY_REPORT_RECIPIENTS = [
-    "gil@kitchenartsandletters.com"
+    "gil@kitchenartsandletters.com",
+    "matt@kitchenartsandletters.com"
 ]
 
 # Validation thresholds
