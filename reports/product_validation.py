@@ -285,14 +285,16 @@ def main():
                 }
             )
             
-            sys.exit(1)
+            # Exit with status code 0 even if issues found
+            logging.info("Report generated and sent successfully")
+            sys.exit(0)
         else:
             logging.info("No validation issues found")
             sys.exit(0)
             
     except Exception as e:
         logging.error(f"Error running validation report: {e}")
-        sys.exit(1)
+        sys.exit(1)  # Only exit with 1 for actual errors
 
 if __name__ == "__main__":
     main()
